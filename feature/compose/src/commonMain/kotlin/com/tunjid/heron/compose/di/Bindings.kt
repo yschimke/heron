@@ -61,6 +61,7 @@ import com.tunjid.heron.ui.UiTokens
 import com.tunjid.heron.ui.platformNavigationBars
 import com.tunjid.heron.ui.rememberSimpleDialogState
 import com.tunjid.heron.ui.scaffold.di.NavigationScope
+import com.tunjid.heron.ui.scaffold.navigation.withTextShareIdentity
 import com.tunjid.heron.ui.scaffold.scaffold.NavigationContentTransformer
 import com.tunjid.heron.ui.scaffold.scaffold.PaneNavigationRail
 import com.tunjid.heron.ui.scaffold.scaffold.PaneScaffold
@@ -101,7 +102,7 @@ private fun createRoute(
     routeParams: RouteParams,
 ) = routeOf(
     params = routeParams,
-)
+).withTextShareIdentity()
 
 @BindingContainer
 @ContributesTo(NavigationScope::class)

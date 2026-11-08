@@ -17,6 +17,7 @@
 package com.tunjid.heron.ui.scaffold.di
 
 import com.tunjid.heron.data.di.AppMainScope
+import com.tunjid.heron.data.repository.AuthRepository
 import com.tunjid.heron.data.tasks.BackgroundTaskDescriptor
 import com.tunjid.heron.data.tasks.BackgroundTaskRunner
 import com.tunjid.heron.data.tasks.BackgroundTaskScheduler
@@ -139,6 +140,7 @@ object ScaffoldBindings {
         appMainScope: CoroutineScope,
         entryMap: Map<String, PaneEntry<ThreePane, Route>>,
         identityStateHolder: IdentityStateHolder,
+        authRepository: AuthRepository,
         navigationStateHolder: NavigationStateHolder,
         notificationStateHolder: NotificationStateHolder,
         uiStateHolder: UiStateHolder,
@@ -152,6 +154,7 @@ object ScaffoldBindings {
     ): AppState = AppState(
         entryMap = entryMap,
         identityStateHolder = identityStateHolder,
+        authRepository = authRepository,
         navigationStateHolder = navigationStateHolder,
         notificationStateHolder = notificationStateHolder,
         uiStateHolder = uiStateHolder,

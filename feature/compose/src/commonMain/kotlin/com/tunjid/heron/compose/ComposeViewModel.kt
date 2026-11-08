@@ -50,6 +50,7 @@ import com.tunjid.heron.feature.FeatureWhileSubscribed
 import com.tunjid.heron.timeline.utilities.writeStatusMessage
 import com.tunjid.heron.ui.scaffold.navigation.NavigationMutation
 import com.tunjid.heron.ui.scaffold.navigation.model
+import com.tunjid.heron.ui.scaffold.navigation.sharedText
 import com.tunjid.heron.ui.scaffold.navigation.sharedUri
 import com.tunjid.heron.ui.stateproduction.RouteStateHolder
 import com.tunjid.heron.ui.text.Memo
@@ -77,6 +78,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.withContext
 
 @Stable
@@ -142,7 +144,9 @@ class ActualComposeViewModel(
                     recordRepository = recordRepository,
                 )
 
-                actions.launchMutationsIn(
+                actions.onStart {
+                    if (route.sharedText != null) state.sharedLinkPreviewAction()?.let { emit(it) }
+                }.launchMutationsIn(
                     productionScope = this,
                     keySelector = Action::key,
                 ) {

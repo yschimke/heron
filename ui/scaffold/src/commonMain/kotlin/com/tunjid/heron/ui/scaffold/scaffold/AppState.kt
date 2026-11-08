@@ -29,6 +29,7 @@ import com.tunjid.heron.data.core.types.GenericUri
 import com.tunjid.heron.data.logging.LogPriority
 import com.tunjid.heron.data.logging.logcat
 import com.tunjid.heron.data.logging.loggableText
+import com.tunjid.heron.data.repository.AuthRepository
 import com.tunjid.heron.data.tasks.BackgroundTaskDescriptor
 import com.tunjid.heron.data.tasks.BackgroundTaskHost
 import com.tunjid.heron.data.tasks.BackgroundTaskRunner
@@ -38,8 +39,13 @@ import com.tunjid.heron.media.video.VideoPlayerController
 import com.tunjid.heron.ui.scaffold.identity.IdentityStateHolder
 import com.tunjid.heron.ui.scaffold.navigation.NavigationAction
 import com.tunjid.heron.ui.scaffold.navigation.NavigationStateHolder
+import com.tunjid.heron.ui.scaffold.navigation.TextShare
+import com.tunjid.heron.ui.scaffold.navigation.composeTextShare
+import com.tunjid.heron.ui.scaffold.navigation.currentRoute
 import com.tunjid.heron.ui.scaffold.navigation.deepLinkTo
+import com.tunjid.heron.ui.scaffold.navigation.deliverTextShare
 import com.tunjid.heron.ui.scaffold.navigation.isShowingSplashScreen
+import com.tunjid.heron.ui.scaffold.navigation.signInDestination
 import com.tunjid.heron.ui.scaffold.notifications.NotificationAction
 import com.tunjid.heron.ui.scaffold.notifications.NotificationStateHolder
 import com.tunjid.heron.ui.scaffold.scaffold.AppState.Companion.NOTIFICATION_PROCESSING_TIMEOUT_SECONDS
@@ -53,6 +59,7 @@ import com.tunjid.heron.ui.stateproduction.withSnapshotNotifications
 import com.tunjid.treenav.compose.PaneEntry
 import com.tunjid.treenav.compose.threepane.ThreePane
 import com.tunjid.treenav.compose.threepane.threePaneEntry
+import com.tunjid.treenav.current
 import com.tunjid.treenav.strings.PathPattern
 import com.tunjid.treenav.strings.Route
 import com.tunjid.treenav.strings.toRouteTrie
@@ -61,6 +68,7 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Instant
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withTimeout
 
 /**
@@ -70,6 +78,7 @@ import kotlinx.coroutines.withTimeout
 class AppState internal constructor(
     entryMap: Map<String, PaneEntry<ThreePane, Route>>,
     private val identityStateHolder: IdentityStateHolder,
+    private val authRepository: AuthRepository,
     private val navigationStateHolder: NavigationStateHolder,
     private val notificationStateHolder: NotificationStateHolder,
     private val uiStateHolder: UiStateHolder,
@@ -121,6 +130,40 @@ class AppState internal constructor(
 
     fun onDeepLink(uri: GenericUri) =
         navigationStateHolder.accept(deepLinkTo(uri))
+
+    /** Called by a platform share receiver; only opens a draft, never submits a post. */
+    suspend fun onTextShared(
+        share: TextShare,
+    ) = withSnapshotNotifications {
+        deliverTextShare(
+            share = share,
+            ready = snapshotFlow { !isShowingSplashScreen },
+            signedIn = authRepository.signedInUser.map { it != null },
+            authenticationActive = snapshotFlow {
+                val current = navigationStateHolder.state.multiStackNav.current as? Route
+                val path = current?.routeParams?.pathAndQueries?.substringBefore('?')
+                path == "/auth" || path?.startsWith("/oauth/") == true
+            },
+            requestSignIn = {
+                navigationStateHolder.accept {
+                    val path = currentRoute.routeParams.pathAndQueries.substringBefore('?')
+                    if (path == "/auth" || path.startsWith("/oauth/")) navState
+                    else signInDestination().navigationMutation(this)
+                }
+            },
+            openComposer = { incoming ->
+                navigationStateHolder.accept(composeTextShare(share = incoming))
+                // Keep the platform's pending payload until queued navigation is observable.
+                snapshotFlow {
+                    navigationStateHolder.state.multiStackNav.stacks.any { stack ->
+                        stack.children.any { node ->
+                            (node as? Route)?.routeParams?.queryParams?.get("shareId")?.firstOrNull() == incoming.id
+                        }
+                    }
+                }.first { it }
+            },
+        )
+    }
 
     fun onSystemVerticalBarChanged(
         edge: NavRailEdge?,

@@ -23,6 +23,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import com.tunjid.heron.data.core.models.Gif
 import com.tunjid.heron.data.core.models.Link
 import com.tunjid.heron.data.core.models.LinkPreview
+import com.tunjid.heron.data.core.models.LinkTarget
 import com.tunjid.heron.data.core.models.Post
 import com.tunjid.heron.data.core.models.PostInteractionSettingsPreference
 import com.tunjid.heron.data.core.models.Profile
@@ -35,8 +36,11 @@ import com.tunjid.heron.data.files.RestrictedFile
 import com.tunjid.heron.ui.scaffold.navigation.NavigationAction
 import com.tunjid.heron.ui.scaffold.navigation.model
 import com.tunjid.heron.ui.scaffold.navigation.sharedElementPrefix
+import com.tunjid.heron.ui.scaffold.navigation.sharedText
 import com.tunjid.heron.ui.text.Memo
 import com.tunjid.heron.ui.text.TextFieldValueSerializer
+import com.tunjid.heron.ui.text.links
+import com.tunjid.heron.ui.text.withFormattedTextPost
 import com.tunjid.snapshottable.SnapshotSpec
 import com.tunjid.snapshottable.Snapshottable
 import com.tunjid.treenav.strings.Route
@@ -105,9 +109,24 @@ interface State {
 
                 else -> Immutable(
                     sharedElementPrefix = route.sharedElementPrefix,
+                    postText = route.sharedText.orEmpty().let { text ->
+                        TextFieldValue(
+                            text = text,
+                            selection = TextRange(text.length),
+                        ).withFormattedTextPost()
+                    },
                 )
             }
     }
+}
+
+/** Seed normal link resolution for shared text without waiting for a keystroke. */
+internal fun State.sharedLinkPreviewAction(): Action.UriDetected? {
+    if (linkPreview != null || embeddedRecord != null) return null
+    val target = postText.annotatedString.links()
+        .firstNotNullOfOrNull { it.target as? LinkTarget.ExternalLink }
+        ?: return null
+    return if (target.uri == dismissedUri) null else Action.UriDetected(url = target.uri.uri)
 }
 
 val State.canDraft

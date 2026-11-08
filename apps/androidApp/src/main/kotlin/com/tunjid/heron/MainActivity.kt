@@ -19,6 +19,7 @@ package com.tunjid.heron
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -38,10 +39,13 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.lifecycleScope
 import com.google.firebase.messaging.FirebaseMessaging
 import com.tunjid.heron.data.core.types.GenericUri
+import com.tunjid.heron.ui.scaffold.navigation.TextShare
 import com.tunjid.heron.ui.scaffold.scaffold.App
 import com.tunjid.heron.ui.scaffold.scaffold.AppState.Companion.isImmersive
 import com.tunjid.heron.ui.scaffold.scaffold.AppState.Companion.isShowingSplashScreen
+import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -50,6 +54,17 @@ class MainActivity : ComponentActivity() {
 
     private val appState by lazy {
         (application as HeronApplication).appState
+    }
+
+    private var pendingShare: TextShare? = null
+    private var shareDelivery: Job? = null
+    private val cancelPendingShare = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() {
+            pendingShare = null
+            shareDelivery?.cancel()
+            isEnabled = false
+            onBackPressedDispatcher.onBackPressed()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,8 +117,64 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        onBackPressedDispatcher.addCallback(this, cancelPendingShare)
+        pendingShare = savedInstanceState?.getString(PENDING_SHARE_ID)?.let { id ->
+            savedInstanceState.getString(PENDING_SHARE_TEXT)?.let { text ->
+                TextShare(id = id, text = text)
+            }
+        }
         updateNotificationPermissions()
-        handleDeepLink(intent)
+        handleIncomingIntent(intent, acceptShare = savedInstanceState == null)
+        deliverPendingShare()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val previousShareId = pendingShare?.id
+        handleIncomingIntent(intent, acceptShare = true)
+        // OAuth VIEW delivery must not restart the pending share and reopen sign-in.
+        if (pendingShare?.id != previousShareId) deliverPendingShare()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.remove(PENDING_SHARE_ID)
+        outState.remove(PENDING_SHARE_TEXT)
+        pendingShare?.let { share ->
+            outState.putString(PENDING_SHARE_ID, share.id)
+            outState.putString(PENDING_SHARE_TEXT, share.text)
+        }
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun handleIncomingIntent(intent: Intent, acceptShare: Boolean) {
+        if (acceptShare && intent.action == Intent.ACTION_SEND && intent.type == "text/plain") {
+            val incoming = TextShare.create(
+                id = UUID.randomUUID().toString(),
+                text = intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString(),
+                subject = intent.getStringExtra(Intent.EXTRA_SUBJECT),
+            )
+            if (incoming != null) pendingShare = incoming
+            // Retain the payload in saved state, not in a launch intent that can be replayed.
+            intent.removeExtra(Intent.EXTRA_TEXT)
+            intent.removeExtra(Intent.EXTRA_SUBJECT)
+        } else {
+            // Internal notification intents carry data without ACTION_VIEW.
+            handleDeepLink(intent)
+        }
+    }
+
+    private fun deliverPendingShare() {
+        shareDelivery?.cancel()
+        val share = pendingShare ?: return
+        cancelPendingShare.isEnabled = true
+        shareDelivery = lifecycleScope.launch {
+            appState.onTextShared(share = share)
+            if (pendingShare?.id == share.id) {
+                pendingShare = null
+                cancelPendingShare.isEnabled = false
+            }
+        }
     }
 
     override fun onResume() {
@@ -151,3 +222,6 @@ fun AppAndroidPreview() {
 }
 
 private val STATUS_BAR_ICON_DELAY = 500.milliseconds
+
+private const val PENDING_SHARE_ID = "pending-share-id"
+private const val PENDING_SHARE_TEXT = "pending-share-text"
